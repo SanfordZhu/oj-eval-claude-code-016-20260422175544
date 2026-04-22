@@ -4,7 +4,6 @@
 #include <string>
 #include <vector>
 #include <algorithm>
-#include <map>
 
 using namespace std;
 
@@ -183,9 +182,9 @@ private:
 
         for (int i = mid + 1; i < node.key_count; i++) {
             strcpy(new_node.keys[i - mid - 1], node.keys[i]);
-            new_node.children[i - mid] = node.children[i];
+            new_node.children[i - mid - 1] = node.children[i];
         }
-        new_node.children[node.key_count - mid] = node.children[node.key_count];
+        new_node.children[node.key_count - mid - 1] = node.children[node.key_count];
         new_node.key_count = node.key_count - mid - 1;
         node.key_count = mid;
 
@@ -280,7 +279,7 @@ private:
                         node.key_count--;
                         write_node(offset, node);
 
-                        underflow = (node.key_count < MIN_KEYS - 1);
+                        underflow = (node.key_count < MIN_KEYS);
                         return true;
                     }
                 }
@@ -315,7 +314,7 @@ private:
                         node.key_count--;
                         write_node(offset, node);
 
-                        underflow = (node.key_count < MIN_KEYS - 1);
+                        underflow = (node.key_count < MIN_KEYS);
                         return true;
                     }
                 }
