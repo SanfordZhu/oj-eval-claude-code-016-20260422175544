@@ -191,7 +191,7 @@ private:
         int mid = MAX_KEYS / 2;
         split_key = string(node.keys[mid]);
 
-        // Copy second half to new node (excluding the middle key which goes up)
+        // Copy second half to new node (excluding middle key which goes up)
         for (int i = mid + 1; i < node.key_count; i++) {
             strcpy(new_node.keys[i - mid - 1], node.keys[i]);
             new_node.children[i - mid - 1] = node.children[i];
@@ -262,150 +262,97 @@ private:
             if (!found) return false;
 
             if (child_underflow) {
-                // Try to borrow from sibling or merge
+                // Try to merge with a sibling
                 Node child = read_node(node.children[idx]);
 
-                // Try to borrow from left sibling
+                // Try to merge with left sibling
                 if (idx > 0) {
                     Node left_sibling = read_node(node.children[idx - 1]);
-                    if (left_sibling.key_count > MIN_KEYS) {
-                        // Borrow from left
+
+                    // Check if merge is possible
+                    if (left_sibling.key_count + child.key_count <= MAX_KEYS) {
+                        // Merge child into left sibling
                         if (child.is_leaf) {
-                            // Shift child entries right
-                            for (int i = child.key_count; i > 0; i--) {
-                                strcpy(child.keys[i], child.keys[i - 1]);
-                                child.children[i] = child.children[i - 1];
+                            for (int i = 0; i < child.key_count; i++) {
+                                strcpy(left_sibling.keys[left_sibling.key_count + i], child.keys[i]);
+                                left_sibling.children[left_sibling.key_count + i] = child.children[i];
                             }
-                            strcpy(child.keys[0], left_sibling.keys[left_sibling.key_count - 1]);
-                            child.children[0] = left_sibling.children[left_sibling.key_count - 1];
-                            left_sibling.key_count--;
-                            child.key_count++;
-                            strcpy(node.keys[idx - 1], child.keys[0]);
+                            left_sibling.key_count += child.key_count;
+                            left_sibling.next_leaf = child.next_leaf;
                         } else {
-                            // Internal node
-                            for (int i = child.key_count; i > 0; i--) {
-                                strcpy(child.keys[i], child.keys[i - 1]);
+                            // Move parent key down to left sibling
+                            strcpy(left_sibling.keys[left_sibling.key_count], node.keys[idx - 1]);
+                            left_sibling.key_count++;
+                            // Move child's keys and children
+                            for (int i = 0; i < child.key_count; i++) {
+                                strcpy(left_sibling.keys[left_sibling.key_count + i], child.keys[i]);
+                                left_sibling.children[left_sibling.key_count + i] = child.children[i];
                             }
-                            for (int i = child.key_count + 1; i > 0; i--) {
-                                child.children[i] = child.children[i - 1];
-                            }
-                            strcpy(child.keys[0], node.keys[idx - 1]);
-                            child.children[0] = left_sibling.children[left_sibling.key_count];
-                            strcpy(node.keys[idx - 1], left_sibling.keys[left_sibling.key_count - 1]);
-                            left_sibling.key_count--;
-                            child.key_count++;
+                            left_sibling.children[left_sibling.key_count + child.key_count] = child.children[child.key_count];
+                            left_sibling.key_count += child.key_count;
                         }
-                        write_node(node.children[idx], child);
                         write_node(node.children[idx - 1], left_sibling);
+
+                        // Remove key and child from parent
+                        for (int i = idx - 1; i < node.key_count - 1; i++) {
+                            strcpy(node.keys[i], node.keys[i + 1]);
+                        }
+                        for (int i = idx; i < node.key_count; i++) {
+                            node.children[i] = node.children[i + 1];
+                        }
+                        node.key_count--;
                         write_node(offset, node);
+
+                        underflow = (node.key_count < MIN_KEYS - 1);
                         return true;
                     }
                 }
 
-                // Try to borrow from right sibling
+                // Try to merge with right sibling
                 if (idx < node.key_count) {
                     Node right_sibling = read_node(node.children[idx + 1]);
-                    if (right_sibling.key_count > MIN_KEYS) {
-                        // Borrow from right
+
+                    // Check if merge is possible
+                    if (child.key_count + right_sibling.key_count <= MAX_KEYS) {
+                        // Merge right sibling into child
                         if (child.is_leaf) {
-                            strcpy(child.keys[child.key_count], right_sibling.keys[0]);
-                            child.children[child.key_count] = right_sibling.children[0];
-                            child.key_count++;
-                            // Update parent key
-                            if (right_sibling.key_count > 1) {
-                                strcpy(node.keys[idx], right_sibling.keys[1]);
-                            }
-                            // Shift right sibling left
-                            for (int i = 0; i < right_sibling.key_count - 1; i++) {
-                                strcpy(right_sibling.keys[i], right_sibling.keys[i + 1]);
-                                right_sibling.children[i] = right_sibling.children[i + 1];
-                            }
-                            right_sibling.key_count--;
-                        } else {
-                            strcpy(child.keys[child.key_count], node.keys[idx]);
-                            child.children[child.key_count + 1] = right_sibling.children[0];
-                            child.key_count++;
-                            strcpy(node.keys[idx], right_sibling.keys[0]);
-                            // Shift right sibling left
-                            for (int i = 0; i < right_sibling.key_count - 1; i++) {
-                                strcpy(right_sibling.keys[i], right_sibling.keys[i + 1]);
-                            }
                             for (int i = 0; i < right_sibling.key_count; i++) {
-                                right_sibling.children[i] = right_sibling.children[i + 1];
+                                strcpy(child.keys[child.key_count + i], right_sibling.keys[i]);
+                                child.children[child.key_count + i] = right_sibling.children[i];
                             }
-                            right_sibling.key_count--;
+                            child.key_count += right_sibling.key_count;
+                            child.next_leaf = right_sibling.next_leaf;
+                        } else {
+                            // Move parent key down to child
+                            strcpy(child.keys[child.key_count], node.keys[idx]);
+                            child.key_count++;
+                            // Move right sibling's keys and children
+                            for (int i = 0; i < right_sibling.key_count; i++) {
+                                strcpy(child.keys[child.key_count + i], right_sibling.keys[i]);
+                                child.children[child.key_count + i] = right_sibling.children[i];
+                            }
+                            child.children[child.key_count + right_sibling.key_count] = right_sibling.children[right_sibling.key_count];
+                            child.key_count += right_sibling.key_count;
                         }
                         write_node(node.children[idx], child);
-                        write_node(node.children[idx + 1], right_sibling);
+
+                        // Remove key and child from parent
+                        for (int i = idx; i < node.key_count - 1; i++) {
+                            strcpy(node.keys[i], node.keys[i + 1]);
+                        }
+                        for (int i = idx + 1; i < node.key_count; i++) {
+                            node.children[i] = node.children[i + 1];
+                        }
+                        node.key_count--;
                         write_node(offset, node);
+
+                        underflow = (node.key_count < MIN_KEYS - 1);
                         return true;
                     }
                 }
 
-                // Merge with sibling
-                if (idx > 0) {
-                    // Merge with left sibling
-                    Node left_sibling = read_node(node.children[idx - 1]);
-                    if (child.is_leaf) {
-                        for (int i = 0; i < child.key_count; i++) {
-                            strcpy(left_sibling.keys[left_sibling.key_count + i], child.keys[i]);
-                            left_sibling.children[left_sibling.key_count + i] = child.children[i];
-                        }
-                        left_sibling.key_count += child.key_count;
-                        left_sibling.next_leaf = child.next_leaf;
-                    } else {
-                        strcpy(left_sibling.keys[left_sibling.key_count], node.keys[idx - 1]);
-                        left_sibling.key_count++;
-                        for (int i = 0; i < child.key_count; i++) {
-                            strcpy(left_sibling.keys[left_sibling.key_count + i], child.keys[i]);
-                            left_sibling.children[left_sibling.key_count + i] = child.children[i];
-                        }
-                        left_sibling.children[left_sibling.key_count + child.key_count] = child.children[child.key_count];
-                        left_sibling.key_count += child.key_count;
-                    }
-                    write_node(node.children[idx - 1], left_sibling);
-                    // Remove key and child from node
-                    for (int i = idx - 1; i < node.key_count - 1; i++) {
-                        strcpy(node.keys[i], node.keys[i + 1]);
-                    }
-                    for (int i = idx; i < node.key_count; i++) {
-                        node.children[i] = node.children[i + 1];
-                    }
-                    node.key_count--;
-                    write_node(offset, node);
-                } else if (idx < node.key_count) {
-                    // Merge with right sibling
-                    Node right_sibling = read_node(node.children[idx + 1]);
-                    if (child.is_leaf) {
-                        for (int i = 0; i < right_sibling.key_count; i++) {
-                            strcpy(child.keys[child.key_count + i], right_sibling.keys[i]);
-                            child.children[child.key_count + i] = right_sibling.children[i];
-                        }
-                        child.key_count += right_sibling.key_count;
-                        child.next_leaf = right_sibling.next_leaf;
-                    } else {
-                        strcpy(child.keys[child.key_count], node.keys[idx]);
-                        child.key_count++;
-                        for (int i = 0; i < right_sibling.key_count; i++) {
-                            strcpy(child.keys[child.key_count + i], right_sibling.keys[i]);
-                            child.children[child.key_count + i] = right_sibling.children[i];
-                        }
-                        child.children[child.key_count + right_sibling.key_count] = right_sibling.children[right_sibling.key_count];
-                        child.key_count += right_sibling.key_count;
-                    }
-                    write_node(node.children[idx], child);
-                    // Remove key and child from node
-                    for (int i = idx; i < node.key_count - 1; i++) {
-                        strcpy(node.keys[i], node.keys[i + 1]);
-                    }
-                    for (int i = idx + 1; i < node.key_count; i++) {
-                        node.children[i] = node.children[i + 1];
-                    }
-                    node.key_count--;
-                    write_node(offset, node);
-                }
-
-                underflow = (node.key_count < MIN_KEYS - 1);
+                // Cannot merge, underflow remains
+                underflow = true;
                 return true;
             }
 
