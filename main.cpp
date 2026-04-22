@@ -398,7 +398,7 @@ private:
                     for (int i = idx; i < node.key_count - 1; i++) {
                         strcpy(node.keys[i], node.keys[i + 1]);
                     }
-                    for (int i = idx + 1; i < node.key_count + 1; i++) {
+                    for (int i = idx + 1; i < node.key_count; i++) {
                         node.children[i] = node.children[i + 1];
                     }
                     node.key_count--;
