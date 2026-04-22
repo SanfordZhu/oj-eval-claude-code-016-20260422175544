@@ -4,14 +4,11 @@
 #include <string>
 #include <vector>
 #include <algorithm>
+#include <map>
 
 using namespace std;
 
 const char* DB_FILE = "bpt.db";
-const int MAX_KEY_LEN = 64;
-const int ORDER = 64;
-const int MAX_KEYS = ORDER - 1;
-const int MIN_KEYS = (MAX_KEYS + 1) / 2;
 
 struct FileHeader {
     int64_t root_offset;
@@ -21,8 +18,8 @@ struct FileHeader {
 struct Node {
     bool is_leaf;
     int16_t key_count;
-    char keys[MAX_KEYS][MAX_KEY_LEN];
-    int64_t children[ORDER];
+    char keys[31][64];
+    int64_t children[32];
     int64_t next_leaf;
 
     Node() : is_leaf(false), key_count(0), next_leaf(-1) {
@@ -183,7 +180,7 @@ private:
 
         for (int i = mid + 1; i < node.key_count; i++) {
             strcpy(new_node.keys[i - mid - 1], node.keys[i]);
-            new_node.children[i - mid - 1] = node.children[i];
+            new_node.children[i - mid] = node.children[i];
         }
         new_node.children[node.key_count - mid - 1] = node.children[node.key_count];
         new_node.key_count = node.key_count - mid - 1;
@@ -198,7 +195,7 @@ private:
         Node node = read_node(offset);
 
         if (node.is_leaf) {
-            if (node.key_count < MAX_KEYS) {
+            if (node.key_count < 31) {
                 if (insert_into_leaf(node, key, value)) {
                     write_node(offset, node);
                     return false;
@@ -218,7 +215,7 @@ private:
 
             if (!split) return false;
 
-            if (node.key_count < MAX_KEYS) {
+            if (node.key_count < 31) {
                 insert_into_internal(node, child_split_key, child_split_offset);
                 write_node(offset, node);
                 return false;
@@ -236,7 +233,7 @@ private:
         if (node.is_leaf) {
             if (remove_from_leaf(node, key, value)) {
                 write_node(offset, node);
-                underflow = (node.key_count < MIN_KEYS);
+                underflow = (node.key_count < 15);
                 return true;
             }
             return false;
@@ -252,7 +249,7 @@ private:
 
                 if (idx > 0) {
                     Node left_sibling = read_node(node.children[idx - 1]);
-                    if (left_sibling.key_count + child.key_count <= MAX_KEYS) {
+                    if (left_sibling.key_count + child.key_count <= 31) {
                         if (child.is_leaf) {
                             for (int i = 0; i < child.key_count; i++) {
                                 strcpy(left_sibling.keys[left_sibling.key_count + i], child.keys[i]);
@@ -268,7 +265,6 @@ private:
                                 left_sibling.children[left_sibling.key_count + i] = child.children[i];
                             }
                             left_sibling.children[left_sibling.key_count + child.key_count] = child.children[child.key_count];
-                            left_sibling.key_count += child.key_count;
                         }
                         write_node(node.children[idx - 1], left_sibling);
 
@@ -281,14 +277,14 @@ private:
                         node.key_count--;
                         write_node(offset, node);
 
-                        underflow = (node.key_count < MIN_KEYS - 1);
+                        underflow = (node.key_count < 15);
                         return true;
                     }
                 }
 
                 if (idx < node.key_count) {
                     Node right_sibling = read_node(node.children[idx + 1]);
-                    if (child.key_count + right_sibling.key_count <= MAX_KEYS) {
+                    if (child.key_count + right_sibling.key_count <= 31) {
                         if (child.is_leaf) {
                             for (int i = 0; i < right_sibling.key_count; i++) {
                                 strcpy(child.keys[child.key_count + i], right_sibling.keys[i]);
@@ -304,7 +300,6 @@ private:
                                 child.children[child.key_count + i] = right_sibling.children[i];
                             }
                             child.children[child.key_count + right_sibling.key_count] = right_sibling.children[right_sibling.key_count];
-                            child.key_count += right_sibling.key_count;
                         }
                         write_node(node.children[idx], child);
 
@@ -317,7 +312,7 @@ private:
                         node.key_count--;
                         write_node(offset, node);
 
-                        underflow = (node.key_count < MIN_KEYS - 1);
+                        underflow = (node.key_count < 15);
                         return true;
                     }
                 }
