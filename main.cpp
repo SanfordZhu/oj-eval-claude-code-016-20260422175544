@@ -229,7 +229,7 @@ private:
         }
     }
 
-    bool delete_recursive(int64_t offset, const string& key, int64_t value, bool& underflow) {
+    bool erase_recursive(int64_t offset, const string& key, int64_t value, bool& underflow) {
         Node node = read_node(offset);
         underflow = false;
 
@@ -243,7 +243,7 @@ private:
         } else {
             int idx = find_key_index(node, key);
             bool child_underflow;
-            bool found = delete_recursive(node.children[idx], key, value, child_underflow);
+            bool found = erase_recursive(node.children[idx], key, value, child_underflow);
 
             if (!found) return false;
 
@@ -385,11 +385,11 @@ public:
         }
     }
 
-    void remove(const string& key, int64_t value) {
+    void erase(const string& key, int64_t value) {
         if (header.root_offset == -1) return;
 
         bool underflow;
-        delete_recursive(header.root_offset, key, value, underflow);
+        erase_recursive(header.root_offset, key, value, underflow);
 
         Node root = read_node(header.root_offset);
         if (!root.is_leaf && root.key_count == 0) {
@@ -426,7 +426,7 @@ int main() {
             string key;
             int64_t value;
             cin >> key >> value;
-            bpt.remove(key, value);
+            bpt.erase(key, value);
         } else if (cmd == "find") {
             string key;
             cin >> key;
