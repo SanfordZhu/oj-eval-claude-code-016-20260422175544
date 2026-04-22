@@ -12,6 +12,7 @@ const char* DB_FILE = "bpt.db";
 const int MAX_KEY_LEN = 64;
 const int ORDER = 128;  // Maximum children per node
 const int MAX_KEYS = ORDER - 1;  // Maximum keys per node
+const int MIN_KEYS = (MAX_KEYS + 1) / 2;  // Minimum keys per node
 
 // File header structure
 struct FileHeader {
@@ -145,7 +146,7 @@ private:
 
     bool remove_from_leaf(Node& node, const string& key, int64_t value) {
         int idx = find_key_index(node, key);
-        // Find the exact key-value pair
+        // Find exact key-value pair
         while (idx < node.key_count && compare_keys(node.keys[idx], key.c_str()) == 0) {
             if (node.children[idx] == value) {
                 // Found, remove it
@@ -249,7 +250,7 @@ private:
         if (node.is_leaf) {
             if (remove_from_leaf(node, key, value)) {
                 write_node(offset, node);
-                underflow = (node.key_count < (MAX_KEYS + 1) / 2);
+                underflow = (node.key_count < MIN_KEYS);
                 return true;
             }
             return false;
@@ -267,7 +268,7 @@ private:
                 // Try to borrow from left sibling
                 if (idx > 0) {
                     Node left_sibling = read_node(node.children[idx - 1]);
-                    if (left_sibling.key_count > (MAX_KEYS + 1) / 2) {
+                    if (left_sibling.key_count > MIN_KEYS) {
                         // Borrow from left
                         if (child.is_leaf) {
                             // Shift child entries right
@@ -304,13 +305,16 @@ private:
                 // Try to borrow from right sibling
                 if (idx < node.key_count) {
                     Node right_sibling = read_node(node.children[idx + 1]);
-                    if (right_sibling.key_count > (MAX_KEYS + 1) / 2) {
+                    if (right_sibling.key_count > MIN_KEYS) {
                         // Borrow from right
                         if (child.is_leaf) {
                             strcpy(child.keys[child.key_count], right_sibling.keys[0]);
                             child.children[child.key_count] = right_sibling.children[0];
                             child.key_count++;
-                            strcpy(node.keys[idx], right_sibling.keys[1]);
+                            // Update parent key
+                            if (right_sibling.key_count > 1) {
+                                strcpy(node.keys[idx], right_sibling.keys[1]);
+                            }
                             // Shift right sibling left
                             for (int i = 0; i < right_sibling.key_count - 1; i++) {
                                 strcpy(right_sibling.keys[i], right_sibling.keys[i + 1]);
@@ -363,7 +367,9 @@ private:
                     // Remove key and child from node
                     for (int i = idx - 1; i < node.key_count - 1; i++) {
                         strcpy(node.keys[i], node.keys[i + 1]);
-                        node.children[i + 1] = node.children[i + 2];
+                    }
+                    for (int i = idx; i < node.key_count; i++) {
+                        node.children[i] = node.children[i + 1];
                     }
                     node.key_count--;
                     write_node(offset, node);
@@ -391,13 +397,15 @@ private:
                     // Remove key and child from node
                     for (int i = idx; i < node.key_count - 1; i++) {
                         strcpy(node.keys[i], node.keys[i + 1]);
-                        node.children[i + 1] = node.children[i + 2];
+                    }
+                    for (int i = idx + 1; i < node.key_count + 1; i++) {
+                        node.children[i] = node.children[i + 1];
                     }
                     node.key_count--;
                     write_node(offset, node);
                 }
 
-                underflow = (node.key_count < (MAX_KEYS + 1) / 2 - 1);
+                underflow = (node.key_count < MIN_KEYS - 1);
                 return true;
             }
 
@@ -471,7 +479,7 @@ public:
         // Check if root is underflowed
         Node root = read_node(header.root_offset);
         if (!root.is_leaf && root.key_count == 0) {
-            // Promote the only child as new root
+            // Promote only child as new root
             header.root_offset = root.children[0];
             write_header();
         }
