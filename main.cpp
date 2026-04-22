@@ -4,12 +4,12 @@
 #include <string>
 #include <vector>
 #include <algorithm>
-#include <set>
+#include <map>
 
 using namespace std;
 
 const char* DB_FILE = "bpt.db";
-const int ORDER = 16;
+const int ORDER = 4;
 const int MAX_KEYS = ORDER - 1;
 const int MIN_KEYS = (MAX_KEYS + 1) / 2;
 
@@ -183,9 +183,9 @@ private:
 
         for (int i = mid + 1; i < node.key_count; i++) {
             strcpy(new_node.keys[i - mid - 1], node.keys[i]);
-            new_node.children[i - mid - 1] = node.children[i];
+            new_node.children[i - mid] = node.children[i];
         }
-        new_node.children[node.key_count - mid - 1] = node.children[node.key_count];
+        new_node.children[node.key_count - mid] = node.children[node.key_count];
         new_node.key_count = node.key_count - mid - 1;
         node.key_count = mid;
 
@@ -306,7 +306,7 @@ private:
                         }
                         write_node(node.children[idx], child);
 
-                        for (int i = idx; i < node.key_count - 1; i++) {
+                        for (int i = idx; i < node.key_count; i++) {
                             strcpy(node.keys[i], node.keys[i + 1]);
                         }
                         for (int i = idx + 1; i < node.key_count; i++) {
