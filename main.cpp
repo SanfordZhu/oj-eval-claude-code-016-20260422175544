@@ -4,29 +4,26 @@
 #include <string>
 #include <vector>
 #include <algorithm>
-#include <cstdint>
 
 using namespace std;
 
 const char* DB_FILE = "bpt.db";
 const int MAX_KEY_LEN = 64;
-const int ORDER = 128;  // Maximum children per node
-const int MAX_KEYS = ORDER - 1;  // Maximum keys per node
-const int MIN_KEYS = (MAX_KEYS + 1) / 2;  // Minimum keys per node
+const int ORDER = 64;
+const int MAX_KEYS = ORDER - 1;
+const int MIN_KEYS = (MAX_KEYS + 1) / 2;
 
-// File header structure
 struct FileHeader {
     int64_t root_offset;
     int64_t next_offset;
 };
 
-// Node structure on disk
 struct Node {
     bool is_leaf;
     int16_t key_count;
     char keys[MAX_KEYS][MAX_KEY_LEN];
-    int64_t children[ORDER];  // For internal nodes: child offsets; For leaf nodes: values
-    int64_t next_leaf;         // Only for leaf nodes
+    int64_t children[ORDER];
+    int64_t next_leaf;
 
     Node() : is_leaf(false), key_count(0), next_leaf(-1) {
         memset(keys, 0, sizeof(keys));
@@ -38,7 +35,7 @@ class BPT {
 private:
     fstream db;
     FileHeader header;
-    int64_t node_size = sizeof(Node);
+    int64_t node_size;
 
     void open_db() {
         db.open(DB_FILE, ios::in | ios::out | ios::binary);
@@ -52,6 +49,7 @@ private:
         } else {
             read_header();
         }
+        node_size = sizeof(Node);
     }
 
     void close_db() {
@@ -106,21 +104,17 @@ private:
 
     bool insert_into_leaf(Node& node, const string& key, int64_t value) {
         int idx = find_key_index(node, key);
-        // Check if key already exists
         if (idx < node.key_count && compare_keys(node.keys[idx], key.c_str()) == 0) {
-            // Check if value already exists for this key
             for (int i = idx; i < node.key_count && compare_keys(node.keys[i], key.c_str()) == 0; i++) {
                 if (node.children[i] == value) {
-                    return false;  // Duplicate (key, value) pair
+                    return false;
                 }
             }
-            // Insert value at correct position (maintain sorted order)
             while (idx < node.key_count && compare_keys(node.keys[idx], key.c_str()) == 0 &&
                    node.children[idx] < value) {
                 idx++;
             }
         }
-        // Shift keys and values to make room
         for (int i = node.key_count; i > idx; i--) {
             strcpy(node.keys[i], node.keys[i - 1]);
             node.children[i] = node.children[i - 1];
@@ -133,7 +127,6 @@ private:
 
     bool insert_into_internal(Node& node, const string& key, int64_t child_offset) {
         int idx = find_key_index(node, key);
-        // Shift keys and children to make room
         for (int i = node.key_count; i > idx; i--) {
             strcpy(node.keys[i], node.keys[i - 1]);
             node.children[i + 1] = node.children[i];
@@ -146,10 +139,8 @@ private:
 
     bool remove_from_leaf(Node& node, const string& key, int64_t value) {
         int idx = find_key_index(node, key);
-        // Find exact key-value pair
         while (idx < node.key_count && compare_keys(node.keys[idx], key.c_str()) == 0) {
             if (node.children[idx] == value) {
-                // Found, remove it
                 for (int i = idx; i < node.key_count - 1; i++) {
                     strcpy(node.keys[i], node.keys[i + 1]);
                     node.children[i] = node.children[i + 1];
@@ -168,10 +159,9 @@ private:
         new_node.next_leaf = node.next_leaf;
         node.next_leaf = new_offset = allocate_node();
 
-        int mid = (MAX_KEYS + 1) / 2;
+        int mid = node.key_count / 2;
         split_key = string(node.keys[mid]);
 
-        // Copy second half to new node
         for (int i = mid; i < node.key_count; i++) {
             strcpy(new_node.keys[i - mid], node.keys[i]);
             new_node.children[i - mid] = node.children[i];
@@ -188,10 +178,9 @@ private:
         new_node.is_leaf = false;
         new_offset = allocate_node();
 
-        int mid = MAX_KEYS / 2;
+        int mid = node.key_count / 2;
         split_key = string(node.keys[mid]);
 
-        // Copy second half to new node (excluding middle key which goes up)
         for (int i = mid + 1; i < node.key_count; i++) {
             strcpy(new_node.keys[i - mid - 1], node.keys[i]);
             new_node.children[i - mid - 1] = node.children[i];
@@ -212,13 +201,12 @@ private:
             if (node.key_count < MAX_KEYS) {
                 if (insert_into_leaf(node, key, value)) {
                     write_node(offset, node);
-                    return false;  // No split needed
+                    return false;
                 }
-                return false;  // Duplicate
+                return false;
             }
-            // Need to split
             if (!insert_into_leaf(node, key, value)) {
-                return false;  // Duplicate
+                return false;
             }
             split_leaf(offset, node, split_key, split_offset);
             return true;
@@ -230,13 +218,11 @@ private:
 
             if (!split) return false;
 
-            // Child split, need to insert split key into this node
             if (node.key_count < MAX_KEYS) {
                 insert_into_internal(node, child_split_key, child_split_offset);
                 write_node(offset, node);
                 return false;
             }
-            // Need to split this node
             insert_into_internal(node, child_split_key, child_split_offset);
             split_internal(offset, node, split_key, split_offset);
             return true;
@@ -262,16 +248,11 @@ private:
             if (!found) return false;
 
             if (child_underflow) {
-                // Try to merge with a sibling
                 Node child = read_node(node.children[idx]);
 
-                // Try to merge with left sibling
                 if (idx > 0) {
                     Node left_sibling = read_node(node.children[idx - 1]);
-
-                    // Check if merge is possible
                     if (left_sibling.key_count + child.key_count <= MAX_KEYS) {
-                        // Merge child into left sibling
                         if (child.is_leaf) {
                             for (int i = 0; i < child.key_count; i++) {
                                 strcpy(left_sibling.keys[left_sibling.key_count + i], child.keys[i]);
@@ -280,10 +261,8 @@ private:
                             left_sibling.key_count += child.key_count;
                             left_sibling.next_leaf = child.next_leaf;
                         } else {
-                            // Move parent key down to left sibling
                             strcpy(left_sibling.keys[left_sibling.key_count], node.keys[idx - 1]);
                             left_sibling.key_count++;
-                            // Move child's keys and children
                             for (int i = 0; i < child.key_count; i++) {
                                 strcpy(left_sibling.keys[left_sibling.key_count + i], child.keys[i]);
                                 left_sibling.children[left_sibling.key_count + i] = child.children[i];
@@ -293,7 +272,6 @@ private:
                         }
                         write_node(node.children[idx - 1], left_sibling);
 
-                        // Remove key and child from parent
                         for (int i = idx - 1; i < node.key_count - 1; i++) {
                             strcpy(node.keys[i], node.keys[i + 1]);
                         }
@@ -308,13 +286,9 @@ private:
                     }
                 }
 
-                // Try to merge with right sibling
                 if (idx < node.key_count) {
                     Node right_sibling = read_node(node.children[idx + 1]);
-
-                    // Check if merge is possible
                     if (child.key_count + right_sibling.key_count <= MAX_KEYS) {
-                        // Merge right sibling into child
                         if (child.is_leaf) {
                             for (int i = 0; i < right_sibling.key_count; i++) {
                                 strcpy(child.keys[child.key_count + i], right_sibling.keys[i]);
@@ -323,10 +297,8 @@ private:
                             child.key_count += right_sibling.key_count;
                             child.next_leaf = right_sibling.next_leaf;
                         } else {
-                            // Move parent key down to child
                             strcpy(child.keys[child.key_count], node.keys[idx]);
                             child.key_count++;
-                            // Move right sibling's keys and children
                             for (int i = 0; i < right_sibling.key_count; i++) {
                                 strcpy(child.keys[child.key_count + i], right_sibling.keys[i]);
                                 child.children[child.key_count + i] = right_sibling.children[i];
@@ -336,7 +308,6 @@ private:
                         }
                         write_node(node.children[idx], child);
 
-                        // Remove key and child from parent
                         for (int i = idx; i < node.key_count - 1; i++) {
                             strcpy(node.keys[i], node.keys[i + 1]);
                         }
@@ -351,7 +322,6 @@ private:
                     }
                 }
 
-                // Cannot merge, underflow remains
                 underflow = true;
                 return true;
             }
@@ -386,7 +356,6 @@ public:
 
     void insert(const string& key, int64_t value) {
         if (header.root_offset == -1) {
-            // Create root
             Node root;
             root.is_leaf = true;
             strcpy(root.keys[0], key.c_str());
@@ -403,7 +372,6 @@ public:
         bool split = insert_recursive(header.root_offset, key, value, split_key, split_offset);
 
         if (split) {
-            // Create new root
             Node new_root;
             new_root.is_leaf = false;
             strcpy(new_root.keys[0], split_key.c_str());
@@ -423,10 +391,8 @@ public:
         bool underflow;
         delete_recursive(header.root_offset, key, value, underflow);
 
-        // Check if root is underflowed
         Node root = read_node(header.root_offset);
         if (!root.is_leaf && root.key_count == 0) {
-            // Promote only child as new root
             header.root_offset = root.children[0];
             write_header();
         }
